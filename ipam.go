@@ -8,6 +8,7 @@ import (
 	"github.com/elpsyr/ipam/pkg/client/etcd"
 	"github.com/elpsyr/ipam/pkg/net"
 	etcd3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/concurrency"
 	"os"
 	"strings"
 )
@@ -60,16 +61,18 @@ func initIpAddressManagement() (*IpAddressManagement, error) {
 func IpAddressManagementV1(subnet string, options *InitOptions) func() (*IpAddressManagement, error) {
 
 	return func() (*IpAddressManagement, error) {
-		var _ipam *IpAddressManagement
-
-		if _ipam != nil {
-			return _ipam, nil
+		var im *IpAddressManagement
+		if im != nil {
+			return im, nil
 		} else {
+			// 1. get a IpAddressManagement instance
+			// set default
 			_subnet := subnet
-			var _maskSegment string = consts.DefaultMaskNum
-			var _podIpMaskSegment string = consts.DefaultMaskNum
+			var _maskSegment string = consts.DefaultMaskNum      // 24
+			var _podIpMaskSegment string = consts.DefaultMaskNum // 24
 			var _rangeStart string = ""
 			var _rangeEnd string = ""
+			// set options
 			if options != nil {
 				if options.MaskSegment != "" {
 					_maskSegment = options.MaskSegment
@@ -100,7 +103,7 @@ func IpAddressManagementV1(subnet string, options *InitOptions) func() (*IpAddre
 			// 比如 _subnet 传了个数字过来, 要给它先干成 a.b.c.d 的样子
 			// 然后 & maskIP, 给做成类似 a.b.0.0 的样子
 			_subnet = net.InetInt2Ip(net.InetIP2Int(_subnet) & net.InetIP2Int(_maskIP))
-			_ipam = &IpAddressManagement{
+			im = &IpAddressManagement{
 				Subnet:         _subnet,           // 子网网段
 				MaskSegment:    _maskSegment,      // 掩码 10 进制
 				MaskIP:         _maskIP,           // 掩码 ip
@@ -108,26 +111,31 @@ func IpAddressManagementV1(subnet string, options *InitOptions) func() (*IpAddre
 				PodMaskIP:      _podMaskIP,        // pod 的 mask ip
 			}
 			etcdClient, err := etcd.GetClient()
-			_ipam.EtcdClient = etcdClient
+			im.EtcdClient = etcdClient
 			//_ipam.K8sClient = getLightK8sClient()
+
+			// 2. init ip pool
 			// 初始化一个 ip 网段的 pool
 			// 如果已经初始化过就不再初始化
-			poolPath := getEtcdPathWithPrefix("/" + _ipam.Subnet + "/" + _ipam.MaskSegment + "/" + "pool")
-			err = _ipam.ipsPoolInit(poolPath)
+			poolPath := getEtcdPathWithPrefix("/" + im.Subnet + "/" + im.MaskSegment + "/" + "pool")
+			err = im.ipsPoolInit(poolPath)
 			if err != nil {
 				return nil, err
 			}
 
+			// 3. get a subnet for local
 			// 然后尝试去拿一个当前主机可用的网段
 			// 如果拿不到, 里面会尝试创建一个
 			hostname, err := os.Hostname()
 			if err != nil {
 				return nil, err
 			}
-			hostPath := getEtcdPathWithPrefix("/" + _ipam.Subnet + "/" + _ipam.MaskSegment + "/" + hostname)
-			currentHostNetwork, err := _ipam.networkInit(
-				hostPath,
-				poolPath,
+			// k==>v
+			// hostPath==>ip
+			hostPath := getEtcdPathWithPrefix("/" + im.Subnet + "/" + im.MaskSegment + "/" + hostname)
+			currentHostNetwork, err := im.localNetworkInit(
+				hostPath, // local
+				poolPath, // ip set
 				_rangeStart,
 				_rangeEnd,
 			)
@@ -146,8 +154,8 @@ func IpAddressManagementV1(subnet string, options *InitOptions) func() (*IpAddre
 				return nil, err
 			}
 
-			_ipam.CurrentHostNetwork = currentHostNetwork
-			return _ipam, nil
+			im.CurrentHostNetwork = currentHostNetwork
+			return im, nil
 		}
 	}
 }
@@ -208,8 +216,71 @@ func (is *IpAddressManagement) ipsPoolInit(poolPath string) error {
 	return err
 }
 
-// 根据主机名获取一个当前主机可用的网段
-func (is *IpAddressManagement) networkInit(hostPath, poolPath string, ranges ...string) (string, error) {
+// localNetworkInit get a subnet(ip) for local node
+// 为当前主机获取一个可用的网段,并且记录在而 etcd 中
+func (is *IpAddressManagement) localNetworkInit(hostPath, poolPath string, ranges ...string) (string, error) {
 
-	return "currentHostNetwork", nil
+	resp, err := is.EtcdClient.Get(context.TODO(), hostPath, etcd3.WithSort(etcd3.SortByVersion, etcd3.SortDescend), etcd3.WithLimit(1))
+	if err != nil {
+		return "", err
+	}
+	for _, ev := range resp.Kvs {
+		network := string(ev.Value)
+		// 已经存过该主机对应的网段了
+		if network != "" {
+			return network, nil
+		}
+	}
+
+	// 从可用的 ip 池中捞一个
+
+	// ****
+
+	// 创建一个Session
+	session, err := concurrency.NewSession(is.EtcdClient)
+	if err != nil {
+	}
+	defer session.Close()
+
+	// 创建一个基于lease的分布式锁
+	mutex := concurrency.NewMutex(session, "/lock")
+
+	// 获取一个持续10秒的lease ID
+	respLease, err := is.EtcdClient.Grant(context.Background(), 15)
+	if err != nil {
+	}
+	leaseID := respLease.ID
+
+	// 获取分布式锁
+	ctx := context.Background()
+	if err := mutex.Lock(ctx); err != nil {
+	}
+	defer mutex.Unlock(ctx)
+
+	// 从etcd中获取存储的字符串
+	resp, err = is.EtcdClient.Get(ctx, poolPath)
+	if err != nil {
+	}
+	s := resp.Kvs[0].Value
+
+	// 解析字符串并修改数字
+	ips := strings.Split(string(s), ";")
+	currentHostNetwork := ips[0]
+	newIpPools := strings.Join(ips[1:], ";")
+
+	// 将更新后的字符串存储回etcd
+	_, err = is.EtcdClient.Put(ctx, "key", newIpPools, etcd3.WithLease(leaseID))
+	if err != nil {
+	}
+	if err != nil {
+		return "", err
+	}
+	// 再把这个网段存到对应的这台主机的 key 下
+	_, err = is.EtcdClient.Put(context.TODO(), hostPath, currentHostNetwork)
+	if err != nil {
+		return "", err
+	}
+
+	// Todo: ip address range
+	return currentHostNetwork, nil
 }
