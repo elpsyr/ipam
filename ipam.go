@@ -19,6 +19,8 @@ const (
 
 var iPamImplement func() (*IpAddressManagement, error)
 
+var im *IpAddressManagement
+
 // IpAddressManagement support ip address management
 type IpAddressManagement struct {
 	Subnet             string
@@ -40,19 +42,63 @@ type InitOptions struct {
 	RangeEnd         string
 }
 
+// Gateway return the first ip of this subnet
+// if subnet is 10.244.0.0 , return 10.244.0.1 as gateway
+func (is *IpAddressManagement) Gateway() (string, error) {
+
+	resp, err := is.EtcdClient.Get(context.TODO(), getHostPath())
+	currentNetwork := string(resp.Kvs[0].Value)
+	if err != nil {
+		return "", err
+	}
+
+	return net.InetInt2Ip(net.InetIP2Int(currentNetwork) + 1), nil
+}
+
+func (is *IpAddressManagement) GatewayWithMaskSegment() (string, error) {
+	resp, err := is.EtcdClient.Get(context.TODO(), getHostPath())
+	currentNetwork := string(resp.Kvs[0].Value)
+	if err != nil {
+		return "", err
+	}
+
+	return net.InetInt2Ip(net.InetIP2Int(currentNetwork)+1) + "/" + getIpamMaskSegment(), nil
+
+}
+
+func getHostPath() string {
+	_im, err := getInitializedIpAddressManagement()
+	if err != nil {
+		return "/test-error-path"
+	}
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "/test-error-path"
+	}
+	return getEtcdPathWithPrefix("/" + _im.Subnet + "/" + _im.MaskSegment + "/" + hostname)
+}
+
+func getIpamMaskSegment() string {
+	_im, err := getInitializedIpAddressManagement()
+	if err != nil {
+		return "/test-error-mask"
+	}
+	return _im.MaskSegment
+}
+
 func Init(subnet string, options *InitOptions) error {
 	if iPamImplement == nil {
 		// now we use IpAddressManagementV1 to implement
 		iPamImplement = IpAddressManagementV1(subnet, options)
 	}
-	_, err := initIpAddressManagement()
+	_, err := getInitializedIpAddressManagement()
 	return err
 }
 
-func initIpAddressManagement() (*IpAddressManagement, error) {
+func getInitializedIpAddressManagement() (*IpAddressManagement, error) {
 
 	if iPamImplement == nil {
-		return nil, errors.New("should Init first")
+		return nil, errors.New("iPamImplement should be assigned first")
 	}
 	return iPamImplement()
 }
@@ -61,7 +107,6 @@ func initIpAddressManagement() (*IpAddressManagement, error) {
 func IpAddressManagementV1(subnet string, options *InitOptions) func() (*IpAddressManagement, error) {
 
 	return func() (*IpAddressManagement, error) {
-		var im *IpAddressManagement
 		if im != nil {
 			return im, nil
 		} else {
