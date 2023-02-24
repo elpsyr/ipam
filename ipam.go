@@ -11,6 +11,7 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"os"
 	"strings"
+	"time"
 )
 
 const (
@@ -302,45 +303,7 @@ func (is *IpAddressManagement) localNetworkInit(hostPath, poolPath string, range
 	}
 
 	// 从可用的 ip 池中捞一个
-
-	// ****
-
-	// 创建一个Session
-	session, err := concurrency.NewSession(is.EtcdClient)
-	if err != nil {
-	}
-	defer session.Close()
-
-	// 创建一个基于lease的分布式锁
-	mutex := concurrency.NewMutex(session, "/lock")
-
-	// 获取一个持续10秒的lease ID
-	respLease, err := is.EtcdClient.Grant(context.Background(), 15)
-	if err != nil {
-	}
-	leaseID := respLease.ID
-
-	// 获取分布式锁
-	ctx := context.Background()
-	if err := mutex.Lock(ctx); err != nil {
-	}
-	defer mutex.Unlock(ctx)
-
-	// 从etcd中获取存储的字符串
-	resp, err = is.EtcdClient.Get(ctx, poolPath)
-	if err != nil {
-	}
-	s := resp.Kvs[0].Value
-
-	// 解析字符串并修改数字
-	ips := strings.Split(string(s), ";")
-	currentHostNetwork := ips[0]
-	newIpPools := strings.Join(ips[1:], ";")
-
-	// 将更新后的字符串存储回etcd
-	_, err = is.EtcdClient.Put(ctx, poolPath, newIpPools, etcd3.WithLease(leaseID))
-	if err != nil {
-	}
+	currentHostNetwork, err := is.getIpFromPools(poolPath)
 	if err != nil {
 		return "", err
 	}
@@ -351,5 +314,62 @@ func (is *IpAddressManagement) localNetworkInit(hostPath, poolPath string, range
 	}
 
 	// Todo: ip address range
+	return currentHostNetwork, nil
+}
+
+func (is *IpAddressManagement) getIpFromPools(poolPath string) (string, error) {
+	var lockRetryDelay = 500 * time.Millisecond
+	var currentHostNetwork string
+	// 创建一个Session
+	session, err := concurrency.NewSession(is.EtcdClient)
+	if err != nil {
+		return "err/get/session", err
+	}
+	defer session.Close()
+
+	// 创建一个基于lease的分布式锁
+	mutex := concurrency.NewMutex(session, "/lock")
+	for {
+		// 尝试获取分布式锁
+		err = mutex.Lock(context.Background())
+		if err != nil {
+			//fmt.Printf("Failed to acquire lock: %v\n", err)
+			time.Sleep(lockRetryDelay)
+			continue
+		}
+
+		// 获取锁成功，读取和修改 key 的值
+		resp, err := is.EtcdClient.Get(context.Background(), poolPath)
+		if err != nil {
+			return "err/get/poolPath", err
+			//fmt.Printf("Failed to get value: %v\n", err)
+		} else {
+			value := string(resp.Kvs[0].Value)
+			//fmt.Printf("Current value: %s\n", value)
+
+			// 解析字符串并修改数字
+			ips := strings.Split(string(value), ";")
+			currentHostNetwork = ips[0]
+			newIpPools := strings.Join(ips[1:], ";")
+
+			// 将更新后的字符串存储回etcd
+			_, err = is.EtcdClient.Put(context.Background(), poolPath, newIpPools)
+			if err != nil {
+				//fmt.Printf("Failed to update value: %v\n", err)
+			} else {
+				//fmt.Printf("Updated value: %s\n", value)
+			}
+		}
+
+		// 释放分布式锁
+		err = mutex.Unlock(context.Background())
+		if err != nil {
+			return "err/release/lock", err
+			//fmt.Printf("Failed to release lock: %v\n", err)
+		}
+		break
+		// 等待一段时间后重试
+		//time.Sleep(lockRetryDelay)
+	}
 	return currentHostNetwork, nil
 }
