@@ -42,6 +42,25 @@ type InitOptions struct {
 	RangeEnd         string
 }
 
+type Config struct {
+	Subnet string
+	conn   ConnectionInfo
+}
+
+type ConnectionInfo struct {
+	EtcdEndpoints  string // https://192.168.98.143:2379
+	EtcdCertFile   string // /etc/kubernetes/pki/etcd/healthcheck-client.crt
+	EtcdKeyFile    string // /etc/kubernetes/pki/etcd/healthcheck-client.key
+	EtcdCACertFile string // /etc/kubernetes/pki/etcd/ca.crt
+}
+
+func New(cfg Config) (*IpAddressManagement, error) {
+	if err := Init(cfg.Subnet, nil, &cfg.conn); err != nil {
+		return nil, err
+	}
+	return getInitializedIpAddressManagement()
+}
+
 // Gateway return the first ip of this subnet
 // if subnet is 10.244.0.0 , return 10.244.0.1 as gateway
 func (is *IpAddressManagement) Gateway() (string, error) {
@@ -86,10 +105,10 @@ func getIpamMaskSegment() string {
 	return _im.MaskSegment
 }
 
-func Init(subnet string, options *InitOptions) error {
+func Init(subnet string, options *InitOptions, conn *ConnectionInfo) error {
 	if iPamImplement == nil {
 		// now we use IpAddressManagementV1 to implement
-		iPamImplement = IpAddressManagementV1(subnet, options)
+		iPamImplement = IpAddressManagementV1(subnet, options, conn)
 	}
 	_, err := getInitializedIpAddressManagement()
 	return err
@@ -104,7 +123,7 @@ func getInitializedIpAddressManagement() (*IpAddressManagement, error) {
 }
 
 // IpAddressManagementV1 subnet like 10.244.0.0/16
-func IpAddressManagementV1(subnet string, options *InitOptions) func() (*IpAddressManagement, error) {
+func IpAddressManagementV1(subnet string, options *InitOptions, conn *ConnectionInfo) func() (*IpAddressManagement, error) {
 
 	return func() (*IpAddressManagement, error) {
 		if im != nil {
@@ -155,7 +174,12 @@ func IpAddressManagementV1(subnet string, options *InitOptions) func() (*IpAddre
 				PodMaskSegment: _podIpMaskSegment, // pod 的 mask 10 进制
 				PodMaskIP:      _podMaskIP,        // pod 的 mask ip
 			}
-			etcdClient, err := etcd.GetClient()
+			etcdClient, err := etcd.GetClient(&etcd.Connection{
+				EtcdEndpoints:  conn.EtcdEndpoints,
+				EtcdCertFile:   conn.EtcdCertFile,
+				EtcdKeyFile:    conn.EtcdKeyFile,
+				EtcdCACertFile: conn.EtcdCACertFile,
+			})
 			im.EtcdClient = etcdClient
 			//_ipam.K8sClient = getLightK8sClient()
 
