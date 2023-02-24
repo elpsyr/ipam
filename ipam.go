@@ -86,6 +86,42 @@ func (is *IpAddressManagement) GatewayWithMaskSegment() (string, error) {
 
 }
 
+// GetUnusedIP 获取一个当前节点所属子网下的 pod ip地址 范围2-255
+// 注意：该函数内部需要加锁，防止同一时刻不同pod获取到了相同的ip
+func (is *IpAddressManagement) GetUnusedIP() (string, error) {
+	for {
+		ip, err := is.nextUnusedIP()
+		if err != nil {
+			return "", err
+		}
+		if net.IsGatewayIP(ip) || net.IsRetainIP(ip) {
+			err = is.recordIP(ip)
+			if err != nil {
+				return "", err
+			}
+			continue
+		}
+		// 先把这个 ip 占上坑位
+		// 坑位先占上不影响大局
+		// 但是如果坑位占晚了被别人抢先的话可能会导致有俩 pod 的 ip 冲突
+		err = is.recordIP(ip)
+		if err != nil {
+			return "", err
+		}
+		return ip, nil
+	}
+}
+
+func (is *IpAddressManagement) nextUnusedIP() (string, error) {
+	// 获取当前节点所属的网段
+
+	return "", nil
+}
+
+func (is *IpAddressManagement) recordIP(ip string) error {
+	return nil
+}
+
 func getHostPath() string {
 	_im, err := getInitializedIpAddressManagement()
 	if err != nil {
@@ -303,7 +339,7 @@ func (is *IpAddressManagement) localNetworkInit(hostPath, poolPath string, range
 	}
 
 	// 从可用的 ip 池中捞一个
-	currentHostNetwork, err := is.getIpFromPools(poolPath)
+	currentHostNetwork, err := is.getSubnetIpFromPools(poolPath)
 	if err != nil {
 		return "", err
 	}
@@ -317,7 +353,7 @@ func (is *IpAddressManagement) localNetworkInit(hostPath, poolPath string, range
 	return currentHostNetwork, nil
 }
 
-func (is *IpAddressManagement) getIpFromPools(poolPath string) (string, error) {
+func (is *IpAddressManagement) getSubnetIpFromPools(poolPath string) (string, error) {
 	var lockRetryDelay = 500 * time.Millisecond
 	var currentHostNetwork string
 	// 创建一个Session

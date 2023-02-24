@@ -23,7 +23,7 @@ func TestNew(t *testing.T) {
 	}
 }
 
-// 测试多个客户端同时从IP池获取IP
+// 测试多个客户端同时从 subnet IP池获取一个 subnet IP
 func TestConcurrencyGetIP(t *testing.T) {
 
 	// 前置条件 创建IP池
@@ -47,7 +47,7 @@ func TestConcurrencyGetIP(t *testing.T) {
 		poolPath := getEtcdPathWithPrefix("/" + ipam.Subnet + "/" + ipam.MaskSegment + "/" + "pool")
 		go func() {
 			defer wg.Done()
-			ip, _ := ipam.getIpFromPools(poolPath)
+			ip, _ := ipam.getSubnetIpFromPools(poolPath)
 			fmt.Println(ip)
 		}()
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"strings"
 )
 
 func GetMaskIpFromNum(numStr string) string {
@@ -32,4 +33,22 @@ func InetIP2Int(ip string) int64 {
 	ret := big.NewInt(0)
 	ret.SetBytes(net.ParseIP(ip).To4())
 	return ret.Int64()
+}
+
+func IsGatewayIP(ip string) bool {
+	// 把每个网段的 x.x.x.1 当做网关
+	if ip == "" {
+		return false
+	}
+	_arr := strings.Split(ip, ".")
+	return _arr[3] == "1"
+}
+
+func IsRetainIP(ip string) bool {
+	// 把每个网段的 x.x.x.0 当做保留
+	if ip == "" {
+		return false
+	}
+	_arr := strings.Split(ip, ".")
+	return _arr[3] == "0"
 }
