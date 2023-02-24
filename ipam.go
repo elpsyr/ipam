@@ -338,7 +338,7 @@ func (is *IpAddressManagement) localNetworkInit(hostPath, poolPath string, range
 	newIpPools := strings.Join(ips[1:], ";")
 
 	// 将更新后的字符串存储回etcd
-	_, err = is.EtcdClient.Put(ctx, "key", newIpPools, etcd3.WithLease(leaseID))
+	_, err = is.EtcdClient.Put(ctx, poolPath, newIpPools, etcd3.WithLease(leaseID))
 	if err != nil {
 	}
 	if err != nil {
