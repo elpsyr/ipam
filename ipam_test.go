@@ -101,6 +101,7 @@ func TestAllHostNetwork(t *testing.T) {
 	}
 	// reset
 	im = nil
+	iPamImplement = nil
 	//
 	ipam, err = NewWithOptions(Config{
 		Subnet: "10.244.0.0/16",
