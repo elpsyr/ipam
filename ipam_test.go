@@ -53,3 +53,33 @@ func TestConcurrencyGetIP(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// 测试单个客户端获取 subnet 下ip地址
+func TestIpAddressManagement_GetUnusedIP(t *testing.T) {
+
+	// 前置条件 创建IP池
+	ipam, err := New(Config{
+		Subnet: "10.244.0.0/16",
+		conn: ConnectionInfo{
+			EtcdEndpoints:  "https://172.16.0.124:2379",
+			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
+			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
+			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
+		},
+	})
+	if err != nil {
+		t.Error(err)
+	}
+
+	var wg sync.WaitGroup
+	// mock 单个客户端多次获取 IP
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			unusedIP, _ := ipam.GetUnusedIP()
+			fmt.Println(unusedIP)
+		}()
+	}
+	wg.Wait()
+}

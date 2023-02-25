@@ -11,6 +11,7 @@ import (
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"os"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -21,6 +22,8 @@ const (
 var iPamImplement func() (*IpAddressManagement, error)
 
 var im *IpAddressManagement
+
+var _lock sync.Mutex
 
 // IpAddressManagement support ip address management
 type IpAddressManagement struct {
@@ -89,6 +92,8 @@ func (is *IpAddressManagement) GatewayWithMaskSegment() (string, error) {
 // GetUnusedIP 获取一个当前节点所属子网下的 pod ip地址 范围2-255
 // 注意：该函数内部需要加锁，防止同一时刻不同pod获取到了相同的ip
 func (is *IpAddressManagement) GetUnusedIP() (string, error) {
+	_lock.Lock()
+	defer _lock.Unlock()
 	for {
 		ip, err := is.nextUnusedIP()
 		if err != nil {
@@ -115,10 +120,67 @@ func (is *IpAddressManagement) GetUnusedIP() (string, error) {
 func (is *IpAddressManagement) nextUnusedIP() (string, error) {
 	// 获取当前节点所属的网段
 
-	return "", nil
+	currentNodeSubnetNetwork, err := is.EtcdClient.Get(context.TODO(), getHostPath())
+	if err != nil {
+		return "", err
+	}
+	allUsedIPs, err := is.EtcdClient.Get(context.TODO(), getRecordPath(string(currentNodeSubnetNetwork.Kvs[0].Value)))
+	if err != nil {
+		return "", err
+	}
+	ipsMap := map[string]bool{}
+	ips := strings.Split(string(allUsedIPs.Kvs[0].Value), ";")
+
+	// 标记该IP已经使用
+	for _, ip := range ips {
+		ipsMap[ip] = true
+	}
+
+	nextIp := ""
+	start := net.InetIP2Int(string(currentNodeSubnetNetwork.Kvs[0].Value))
+	for i := 0; i < 256; i++ {
+		nextIpNum := start + int64(i)
+		nextIp = net.InetInt2Ip(nextIpNum)
+		if _, ok := ipsMap[nextIp]; !ok {
+			break
+		}
+	}
+
+	return nextIp, nil
 }
 
 func (is *IpAddressManagement) recordIP(ip string) error {
+
+	// 获取当前节点所属的网段
+
+	currentNodeSubnetNetwork, err := is.EtcdClient.Get(context.TODO(), getHostPath())
+	if err != nil {
+		return err
+	}
+	allUsedIPs, err := is.EtcdClient.Get(context.TODO(), getRecordPath(string(currentNodeSubnetNetwork.Kvs[0].Value)))
+	if err != nil {
+		return err
+	}
+	ipsMap := map[string]bool{}
+	ips := strings.Split(string(allUsedIPs.Kvs[0].Value), ";")
+
+	// 标记该IP已经使用
+	for _, ip := range ips {
+		ipsMap[ip] = true
+	}
+
+	nextIp := ip
+
+	if _, ok := ipsMap[nextIp]; ok {
+		return errors.New("already record")
+	}
+	ips = append(ips, nextIp)
+	joinedIPs := strings.Join(ips, ";")
+	_, err = is.EtcdClient.Put(context.TODO(), getRecordPath(string(currentNodeSubnetNetwork.Kvs[0].Value)), joinedIPs)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -132,6 +194,10 @@ func getHostPath() string {
 		return "/test-error-path"
 	}
 	return getEtcdPathWithPrefix("/" + _im.Subnet + "/" + _im.MaskSegment + "/" + hostname)
+}
+
+func getRecordPath(hostNetwork string) string {
+	return getHostPath() + "/" + hostNetwork
 }
 
 func getIpamMaskSegment() string {
