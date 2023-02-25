@@ -7,9 +7,11 @@ import (
 	"github.com/elpsyr/ipam/consts"
 	"github.com/elpsyr/ipam/pkg/client/apiserver"
 	"github.com/elpsyr/ipam/pkg/client/etcd"
+	"github.com/elpsyr/ipam/pkg/log"
 	"github.com/elpsyr/ipam/pkg/net"
 	etcd3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"os"
 	"strings"
@@ -37,7 +39,12 @@ type IpAddressManagement struct {
 	CurrentHostNetwork string
 	EtcdClient         *etcd3.Client
 	K8sClient          *kubernetes.Clientset
+	*Cache
 	//*operator
+}
+type Cache struct {
+	nodeIpCache map[string]string
+	cidrCache   map[string]string
 }
 
 // InitOptions store information to init IpAddressManagement
@@ -46,6 +53,7 @@ type InitOptions struct {
 	PodIpMaskSegment string
 	RangeStart       string
 	RangeEnd         string
+	HostName         string // test used
 }
 
 type Config struct {
@@ -63,6 +71,13 @@ type ConnectionInfo struct {
 
 func New(cfg Config) (*IpAddressManagement, error) {
 	if err := Init(cfg.Subnet, nil, &cfg.conn); err != nil {
+		return nil, err
+	}
+	return getInitializedIpAddressManagement()
+}
+
+func NewWithOptions(cfg Config, opt *InitOptions) (*IpAddressManagement, error) {
+	if err := Init(cfg.Subnet, &InitOptions{}, &cfg.conn); err != nil {
 		return nil, err
 	}
 	return getInitializedIpAddressManagement()
@@ -258,6 +273,11 @@ func IpAddressManagementV1(subnet string, options *InitOptions, conn *Connection
 			var _podIpMaskSegment string = consts.DefaultMaskNum // 24
 			var _rangeStart string = ""
 			var _rangeEnd string = ""
+			hostname, err := os.Hostname()
+			cache := &Cache{
+				cidrCache:   map[string]string{},
+				nodeIpCache: map[string]string{},
+			}
 			// set options
 			if options != nil {
 				if options.MaskSegment != "" {
@@ -271,6 +291,9 @@ func IpAddressManagementV1(subnet string, options *InitOptions, conn *Connection
 				}
 				if options.RangeEnd != "" {
 					_rangeEnd = options.RangeEnd
+				}
+				if options.HostName != "" {
+					hostname = options.HostName
 				}
 			}
 
@@ -295,6 +318,7 @@ func IpAddressManagementV1(subnet string, options *InitOptions, conn *Connection
 				MaskIP:         _maskIP,           // 掩码 ip
 				PodMaskSegment: _podIpMaskSegment, // pod 的 mask 10 进制
 				PodMaskIP:      _podMaskIP,        // pod 的 mask ip
+				Cache:          cache,
 			}
 			etcdClient, err := etcd.GetClient(&etcd.Connection{
 				EtcdEndpoints:  conn.EtcdEndpoints,
@@ -318,7 +342,7 @@ func IpAddressManagementV1(subnet string, options *InitOptions, conn *Connection
 			// 3. get a subnet for local
 			// 然后尝试去拿一个当前主机可用的网段
 			// 如果拿不到, 里面会尝试创建一个
-			hostname, err := os.Hostname()
+			//hostname, err := os.Hostname()
 			if err != nil {
 				return nil, err
 			}
@@ -494,4 +518,133 @@ func (is *IpAddressManagement) getSubnetIpFromPools(poolPath string) (string, er
 		//time.Sleep(lockRetryDelay)
 	}
 	return currentHostNetwork, nil
+}
+
+type Network struct {
+	Name          string
+	IP            string
+	Hostname      string
+	CIDR          string
+	IsCurrentHost bool
+}
+
+// AllHostNetwork 获取集群中全部节点的网络信息
+func (is *IpAddressManagement) AllHostNetwork() ([]*Network, error) {
+	names, err := is.NodeNames()
+	if err != nil {
+		return nil, err
+	}
+
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, err
+	}
+
+	res := []*Network{}
+	for _, name := range names {
+		ip, err := is.NodeIp(name)
+		if err != nil {
+			return nil, err
+		}
+
+		cidr, err := is.CIDR(name)
+		if err != nil {
+			return nil, err
+		}
+
+		if name == hostname {
+			res = append(res, &Network{
+				Hostname:      name,
+				IP:            ip,
+				IsCurrentHost: true,
+				CIDR:          cidr,
+			})
+		} else {
+			res = append(res, &Network{
+				Hostname:      name,
+				IP:            ip,
+				IsCurrentHost: false,
+				CIDR:          cidr,
+			})
+		}
+	}
+	return res, nil
+}
+
+/**
+ * 用来获取集群中全部的 host name
+ * 这里直接从 etcd 的 key 下边查
+ * 不调 k8s 去捞, k8s 捞一次出来的东西太多了
+ */
+func (is *IpAddressManagement) NodeNames() ([]string, error) {
+	const _minionsNodePrefix = "/registry/minions/"
+
+	var nodes []string
+	nodesResp, err := is.EtcdClient.Get(context.TODO(), _minionsNodePrefix, etcd3.WithKeysOnly(), etcd3.WithPrefix())
+	for _, ev := range nodesResp.Kvs {
+		nodes = append(nodes, string(ev.Key))
+	}
+
+	if err != nil {
+		log.WriteLog("这里从 etcd 获取全部 nodes key 失败, err: ", err.Error())
+		return nil, err
+	}
+
+	var res []string
+	for _, node := range nodes {
+		node = strings.Replace(node, _minionsNodePrefix, "", 1)
+		res = append(res, node)
+	}
+	return res, nil
+}
+
+/**
+ * 根据 host name 获取节点 ip
+ */
+func (is *IpAddressManagement) NodeIp(hostName string) (string, error) {
+	if val, ok := is.nodeIpCache[hostName]; ok {
+		return val, nil
+	}
+	node, err := is.K8sClient.CoreV1().Nodes().Get(context.TODO(), hostName, metav1.GetOptions{})
+	if err != nil {
+		return "", err
+	}
+	for _, addr := range node.Status.Addresses {
+		if addr.Type == "InternalIP" {
+			is.nodeIpCache[hostName] = addr.Address
+			return addr.Address, nil
+		}
+	}
+	return "", errors.New("没有找到 ip")
+}
+
+// 获取当前节点被分配到的网段 + mask
+func (is *IpAddressManagement) CIDR(hostName string) (string, error) {
+	if val, ok := is.cidrCache[hostName]; ok {
+		return val, nil
+	}
+	_cidrPath := getEtcdPathWithPrefix("/" + is.Subnet + "/" + getIpamMaskSegment() + "/" + hostName)
+
+	var cidr string
+	cidrResp, err := is.EtcdClient.Get(context.TODO(), _cidrPath)
+	if err != nil {
+		return "", err
+	}
+	if len(cidrResp.Kvs) > 0 {
+
+		cidr = string(cidrResp.Kvs[0].Value)
+	} else {
+		cidr = ""
+	}
+
+	if cidr == "" {
+		return "", nil
+	}
+	// 先获取一下 ipam
+	if err != nil {
+		return "", err
+	}
+	cidr += ("/" + is.PodMaskSegment)
+	is.cidrCache[hostName] = cidr
+	return cidr, nil
 }

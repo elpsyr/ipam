@@ -83,3 +83,43 @@ func TestIpAddressManagement_GetUnusedIP(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+func TestAllHostNetwork(t *testing.T) {
+	// 前置条件 mock两个节点
+	ipam, err := NewWithOptions(Config{
+		Subnet: "10.244.0.0/16",
+		conn: ConnectionInfo{
+			EtcdEndpoints:  "https://172.16.0.124:2379",
+			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
+			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
+			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
+		},
+	}, &InitOptions{HostName: "172-16-0-130"})
+	if err != nil {
+		t.Error(err)
+	}
+	// reset
+	ipam = nil
+	//
+	ipam, err = NewWithOptions(Config{
+		Subnet: "10.244.0.0/16",
+		conn: ConnectionInfo{
+			EtcdEndpoints:  "https://172.16.0.124:2379",
+			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
+			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
+			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
+		},
+	}, &InitOptions{HostName: "172-16-0-124"})
+	if err != nil {
+		t.Error(err)
+	}
+
+	allHostNetwork, err := ipam.AllHostNetwork()
+	if err != nil {
+		t.Error(err)
+	}
+	for i, network := range allHostNetwork {
+
+		fmt.Printf("the %d  : %v ", i, network)
+	}
+}
