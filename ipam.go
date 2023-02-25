@@ -77,7 +77,7 @@ func New(cfg Config) (*IpAddressManagement, error) {
 }
 
 func NewWithOptions(cfg Config, opt *InitOptions) (*IpAddressManagement, error) {
-	if err := Init(cfg.Subnet, &InitOptions{}, &cfg.conn); err != nil {
+	if err := Init(cfg.Subnet, opt, &cfg.conn); err != nil {
 		return nil, err
 	}
 	return getInitializedIpAddressManagement()
