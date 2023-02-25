@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"github.com/elpsyr/ipam/consts"
+	"github.com/elpsyr/ipam/pkg/client/apiserver"
 	"github.com/elpsyr/ipam/pkg/client/etcd"
 	"github.com/elpsyr/ipam/pkg/net"
 	etcd3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
+	"k8s.io/client-go/kubernetes"
 	"os"
 	"strings"
 	"sync"
@@ -34,7 +36,7 @@ type IpAddressManagement struct {
 	PodMaskIP          string
 	CurrentHostNetwork string
 	EtcdClient         *etcd3.Client
-	//K8sClient          *client.LightK8sClient
+	K8sClient          *kubernetes.Clientset
 	//*operator
 }
 
@@ -56,6 +58,7 @@ type ConnectionInfo struct {
 	EtcdCertFile   string // /etc/kubernetes/pki/etcd/healthcheck-client.crt
 	EtcdKeyFile    string // /etc/kubernetes/pki/etcd/healthcheck-client.key
 	EtcdCACertFile string // /etc/kubernetes/pki/etcd/ca.crt
+	KubeConfigPath string
 }
 
 func New(cfg Config) (*IpAddressManagement, error) {
@@ -300,7 +303,8 @@ func IpAddressManagementV1(subnet string, options *InitOptions, conn *Connection
 				EtcdCACertFile: conn.EtcdCACertFile,
 			})
 			im.EtcdClient = etcdClient
-			//_ipam.K8sClient = getLightK8sClient()
+			client, err := apiserver.GetClient(conn.KubeConfigPath)
+			im.K8sClient = client
 
 			// 2. init ip pool
 			// 初始化一个 ip 网段的 pool
