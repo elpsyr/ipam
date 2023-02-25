@@ -6,17 +6,21 @@ import (
 	"testing"
 )
 
+// connectionInfo to 172.16.0.124  kube & etcd
+var connectionInfo = ConnectionInfo{
+	EtcdEndpoints:  "https://172.16.0.124:2379",
+	EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
+	EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
+	EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
+	KubeConfigPath: "D:\\Project\\elpsyr\\ipam\\test\\kube\\config",
+}
+
 // 目前测试数据需要手动删除：
 // ETCDCTL_API=3 etcdctl --endpoints https://172.16.0.124:2379 --cacert /etc/kubernetes/pki/etcd/ca.crt --cert /etc/kubernetes/pki/etcd/healthcheck-client.crt --key /etc/kubernetes/pki/etcd/healthcheck-client.key del  /testcni/ipam --prefix
 func TestNew(t *testing.T) {
 	_, err := New(Config{
 		Subnet: "10.244.0.0/16",
-		conn: ConnectionInfo{
-			EtcdEndpoints:  "https://172.16.0.124:2379",
-			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
-			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
-			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
-		},
+		conn:   connectionInfo,
 	})
 	if err != nil {
 		t.Error(err)
@@ -29,12 +33,7 @@ func TestConcurrencyGetIP(t *testing.T) {
 	// 前置条件 创建IP池
 	ipam, err := New(Config{
 		Subnet: "10.244.0.0/16",
-		conn: ConnectionInfo{
-			EtcdEndpoints:  "https://172.16.0.124:2379",
-			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
-			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
-			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
-		},
+		conn:   connectionInfo,
 	})
 	if err != nil {
 		t.Error(err)
@@ -60,12 +59,7 @@ func TestIpAddressManagement_GetUnusedIP(t *testing.T) {
 	// 前置条件 创建IP池
 	ipam, err := New(Config{
 		Subnet: "10.244.0.0/16",
-		conn: ConnectionInfo{
-			EtcdEndpoints:  "https://172.16.0.124:2379",
-			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
-			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
-			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
-		},
+		conn:   connectionInfo,
 	})
 	if err != nil {
 		t.Error(err)
@@ -88,13 +82,7 @@ func TestAllHostNetwork(t *testing.T) {
 	// 前置条件 mock两个节点
 	ipam, err := NewWithOptions(Config{
 		Subnet: "10.244.0.0/16",
-		conn: ConnectionInfo{
-			EtcdEndpoints:  "https://172.16.0.124:2379",
-			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
-			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
-			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
-			KubeConfigPath: "D:\\Project\\elpsyr\\ipam\\test\\kube\\config",
-		},
+		conn:   connectionInfo,
 	}, &InitOptions{HostName: "172-16-0-130"})
 	if err != nil {
 		t.Error(err)
@@ -105,13 +93,7 @@ func TestAllHostNetwork(t *testing.T) {
 	//
 	ipam, err = NewWithOptions(Config{
 		Subnet: "10.244.0.0/16",
-		conn: ConnectionInfo{
-			EtcdEndpoints:  "https://172.16.0.124:2379",
-			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
-			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
-			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
-			KubeConfigPath: "D:\\Project\\elpsyr\\ipam\\test\\kube\\config",
-		},
+		conn:   connectionInfo,
 	}, &InitOptions{HostName: "172-16-0-124"})
 	if err != nil {
 		t.Error(err)
