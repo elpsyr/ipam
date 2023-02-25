@@ -186,7 +186,11 @@ func (is *IpAddressManagement) recordIP(ip string) error {
 	if _, ok := ipsMap[nextIp]; ok {
 		return errors.New("already record")
 	}
-	ips = append(ips, nextIp)
+	if allUsedIPs != "" {
+		ips = append(ips, nextIp)
+	} else {
+		ips = []string{nextIp}
+	}
 	joinedIPs := strings.Join(ips, ";")
 	_, err = is.EtcdClient.Put(context.TODO(), getRecordPath(string(currentNodeSubnetNetwork.Kvs[0].Value)), joinedIPs)
 	if err != nil {
