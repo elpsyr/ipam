@@ -124,12 +124,18 @@ func (is *IpAddressManagement) nextUnusedIP() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	allUsedIPs, err := is.EtcdClient.Get(context.TODO(), getRecordPath(string(currentNodeSubnetNetwork.Kvs[0].Value)))
+	allUsedIPsResp, err := is.EtcdClient.Get(context.TODO(), getRecordPath(string(currentNodeSubnetNetwork.Kvs[0].Value)))
 	if err != nil {
 		return "", err
 	}
+	var allUsedIPs string
+	if len(allUsedIPsResp.Kvs) > 0 {
+		allUsedIPs = string(allUsedIPsResp.Kvs[0].Value)
+	} else {
+		allUsedIPs = ""
+	}
 	ipsMap := map[string]bool{}
-	ips := strings.Split(string(allUsedIPs.Kvs[0].Value), ";")
+	ips := strings.Split(allUsedIPs, ";")
 
 	// 标记该IP已经使用
 	for _, ip := range ips {
