@@ -93,6 +93,7 @@ func TestAllHostNetwork(t *testing.T) {
 			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
 			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
 			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
+			KubeConfigPath: "D:\\Project\\elpsyr\\ipam\\test\\kube\\config",
 		},
 	}, &InitOptions{HostName: "172-16-0-130"})
 	if err != nil {
@@ -108,6 +109,7 @@ func TestAllHostNetwork(t *testing.T) {
 			EtcdCertFile:   "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.crt",
 			EtcdKeyFile:    "D:\\Project\\elpsyr\\ipam\\test\\tls\\healthcheck-client.key",
 			EtcdCACertFile: "D:\\Project\\elpsyr\\ipam\\test\\tls\\ca.crt",
+			KubeConfigPath: "D:\\Project\\elpsyr\\ipam\\test\\kube\\config",
 		},
 	}, &InitOptions{HostName: "172-16-0-124"})
 	if err != nil {
