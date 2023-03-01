@@ -20,7 +20,7 @@ var connectionInfo = ConnectionInfo{
 func TestNew(t *testing.T) {
 	_, err := New(Config{
 		Subnet: "10.244.0.0/16",
-		conn:   connectionInfo,
+		Conn:   connectionInfo,
 	})
 	if err != nil {
 		t.Error(err)
@@ -33,7 +33,7 @@ func TestConcurrencyGetIP(t *testing.T) {
 	// 前置条件 创建IP池
 	ipam, err := New(Config{
 		Subnet: "10.244.0.0/16",
-		conn:   connectionInfo,
+		Conn:   connectionInfo,
 	})
 	if err != nil {
 		t.Error(err)
@@ -59,7 +59,7 @@ func TestIpAddressManagement_GetUnusedIP(t *testing.T) {
 	// 前置条件 创建IP池
 	ipam, err := New(Config{
 		Subnet: "10.244.0.0/16",
-		conn:   connectionInfo,
+		Conn:   connectionInfo,
 	})
 	if err != nil {
 		t.Error(err)
@@ -82,7 +82,7 @@ func TestAllHostNetwork(t *testing.T) {
 	// 前置条件 mock两个节点
 	ipam, err := NewWithOptions(Config{
 		Subnet: "10.244.0.0/16",
-		conn:   connectionInfo,
+		Conn:   connectionInfo,
 	}, &InitOptions{HostName: "172-16-0-130"})
 	if err != nil {
 		t.Error(err)
@@ -93,7 +93,7 @@ func TestAllHostNetwork(t *testing.T) {
 	//
 	ipam, err = NewWithOptions(Config{
 		Subnet: "10.244.0.0/16",
-		conn:   connectionInfo,
+		Conn:   connectionInfo,
 	}, &InitOptions{HostName: "172-16-0-124"})
 	if err != nil {
 		t.Error(err)

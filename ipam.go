@@ -55,11 +55,13 @@ type InitOptions struct {
 	HostName         string // test used
 }
 
+// Config contains information about starting ip_address_management
 type Config struct {
 	Subnet string
-	conn   ConnectionInfo
+	Conn   ConnectionInfo // Connection info of etcd & kubernetes
 }
 
+// ConnectionInfo is Connection info of etcd & kubernetes
 type ConnectionInfo struct {
 	EtcdEndpoints  string // https://192.168.98.143:2379
 	EtcdCertFile   string // /etc/kubernetes/pki/etcd/healthcheck-client.crt
@@ -69,14 +71,14 @@ type ConnectionInfo struct {
 }
 
 func New(cfg Config) (*IpAddressManagement, error) {
-	if err := Init(cfg.Subnet, nil, &cfg.conn); err != nil {
+	if err := Init(cfg.Subnet, nil, &cfg.Conn); err != nil {
 		return nil, err
 	}
 	return getInitializedIpAddressManagement()
 }
 
 func NewWithOptions(cfg Config, opt *InitOptions) (*IpAddressManagement, error) {
-	if err := Init(cfg.Subnet, opt, &cfg.conn); err != nil {
+	if err := Init(cfg.Subnet, opt, &cfg.Conn); err != nil {
 		return nil, err
 	}
 	return getInitializedIpAddressManagement()
