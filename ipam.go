@@ -7,7 +7,6 @@ import (
 	"github.com/elpsyr/ipam/consts"
 	"github.com/elpsyr/ipam/pkg/client/apiserver"
 	"github.com/elpsyr/ipam/pkg/client/etcd"
-	"github.com/elpsyr/ipam/pkg/log"
 	"github.com/elpsyr/ipam/pkg/net"
 	etcd3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
@@ -571,14 +570,15 @@ func (is *IpAddressManagement) AllHostNetwork() ([]*Network, error) {
 	return res, nil
 }
 
-/**
- * 用来获取集群中全部的 host name
- * 这里直接从 etcd 的 key 下边查
- * 不调 k8s 去捞, k8s 捞一次出来的东西太多了
- */
+// NodeNames get all cluster nodes hostname
+// 用来获取集群中全部的 host name
+// 这里直接从 etcd 的 key 下边查
+// 不调 k8s 去捞, k8s 捞一次出来的东西太多了
 func (is *IpAddressManagement) NodeNames() ([]string, error) {
 	const _minionsNodePrefix = "/registry/minions/"
 
+	// 1. get all nodes hostname
+	// like: /registry/minions/172-16-0-124
 	var nodes []string
 	nodesResp, err := is.EtcdClient.Get(context.TODO(), _minionsNodePrefix, etcd3.WithKeysOnly(), etcd3.WithPrefix())
 	for _, ev := range nodesResp.Kvs {
@@ -586,10 +586,10 @@ func (is *IpAddressManagement) NodeNames() ([]string, error) {
 	}
 
 	if err != nil {
-		log.WriteLog("这里从 etcd 获取全部 nodes key 失败, err: ", err.Error())
 		return nil, err
 	}
 
+	// 2. remove prefix
 	var res []string
 	for _, node := range nodes {
 		node = strings.Replace(node, _minionsNodePrefix, "", 1)
