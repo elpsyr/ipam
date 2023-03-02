@@ -8,6 +8,7 @@ import (
 	"github.com/elpsyr/ipam/pkg/client/apiserver"
 	"github.com/elpsyr/ipam/pkg/client/etcd"
 	"github.com/elpsyr/ipam/pkg/net"
+	"github.com/vishvananda/netlink"
 	etcd3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/client/v3/concurrency"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -527,6 +528,49 @@ type Network struct {
 	Hostname      string
 	CIDR          string
 	IsCurrentHost bool
+}
+
+func (is *IpAddressManagement) HostNetwork(hostname string) (*Network, error) {
+	linkList, err := netlink.LinkList()
+	if err != nil {
+		return nil, err
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	hostIP, err := is.NodeIp(hostname)
+	if err != nil {
+		return nil, err
+	}
+	for _, link := range linkList {
+		// 就看类型是 device 的
+		if link.Type() == "device" {
+			// 找每块儿设备的地址信息
+			addr, err := netlink.AddrList(link, netlink.FAMILY_V4)
+			if err != nil {
+				continue
+			}
+			if len(addr) >= 1 {
+				// TODO: 这里其实应该处理一下一块儿网卡绑定了多个 ip 的情况
+				// 数组中的每项都是这样的格式 "192.168.98.143/24 ens33"
+				_addr := strings.Split(addr[0].String(), " ")
+				ip := _addr[0]
+				name := _addr[1]
+				ip = strings.Split(ip, "/")[0]
+				if ip == hostIP {
+					// 走到这儿说明主机走的就是这块儿网卡
+					return &Network{
+						Name:          name,
+						IP:            hostIP,
+						Hostname:      hostname,
+						IsCurrentHost: true,
+					}, nil
+				}
+			}
+		}
+	}
+	return nil, errors.New("no valid network device found")
 }
 
 // AllHostNetwork 获取集群中全部节点的网络信息
